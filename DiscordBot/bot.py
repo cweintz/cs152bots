@@ -54,6 +54,11 @@ class ModBot(discord.Client):
                 if channel.name == f'group-{self.group_num}-mod':
                     self.mod_channels[guild.id] = channel
 
+    async def handle_mod_message(self, message):
+        header = {"Authorization": f"Bot {discord_token}", "Content-Type": "application/json"}
+        data = {"name": f"{message.id}", "auto_archive_duration": 60}
+        requests.post(f"/channels/{message.channel.id}/messages/{message.id}/threads")
+
     async def on_message(self, message):
         '''
         This function is called whenever a message is sent in a channel that the bot can see (including DMs). 
@@ -65,6 +70,8 @@ class ModBot(discord.Client):
 
         # Check if this message was sent in a server ("guild") or if it's a DM
         if message.guild:
+            if (message.channel.name == f"group-{self.group_num}-mod"):
+                await self.handle_mod_message(message)
             await self.handle_channel_message(message)
         else:
             await self.handle_dm(message)
