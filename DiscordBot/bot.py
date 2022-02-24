@@ -7,6 +7,8 @@ import logging
 import re
 import requests
 from report import Report
+import sqlite3 as sl # use DB to hold reports
+import database as database
 
 # Set up logging to the console
 logger = logging.getLogger('discord')
@@ -34,6 +36,9 @@ class ModBot(discord.Client):
         self.mod_channels = {} # Map from guild to the mod channel id for that guild
         self.reports = {} # Map from user IDs to the state of their report
         self.perspective_key = key
+        self.open_threads = dict()
+        self.header = {"Authorization": f"Bot {discord_token}", "Content-Type": "application/json"}
+        self.db = None
 
     async def on_ready(self):
         print(f'{self.user.name} has connected to Discord! It is these guilds:')
@@ -54,25 +59,132 @@ class ModBot(discord.Client):
                 if channel.name == f'group-{self.group_num}-mod':
                     self.mod_channels[guild.id] = channel
 
+        # Open DB
+        self.db = sl.connect("reports.db")
+        if self.db is not None:
+            try:
+                cursor = self.db.cursor()
+                cursor.execute(database.CREATE_REPORTS_DB)
+                cursor.close()
+            except sl.Error as e: 
+                print(e)
+        else:
+            print("An error has occured getting the database reference!")
+
+    def send_thread_message(self, thread_id, message):
+        requests.post(
+            f"https://discord.com/api/v9/channels/{thread_id}/messages",
+            json={"content": message}, headers=self.header
+        )
+
+    async def add_reactions(self, message, emojis):
+        for emoji in emojis:
+            await message.add_reaction(emoji)
+
+    async def remove_reactions(self, message, emojis):
+        for emoji in emojis:
+            await message.remove_reaction(emoji, self.user)
+
+    async def on_raw_reaction_add(self, response):
+        # get the latest reaction
+        channel = await self.fetch_channel(response.channel_id)
+        if channel.name != f"group-{self.group_num}-mod": return
+
+        message = await channel.fetch_message(response.message_id)   
+        if message.id not in self.open_threads: return
+        
+        selected = [reaction.emoji for reaction in message.reactions if reaction.count > 1]
+        if len(selected) < 1: return
+        
+        # insufficient permisssions
+        # await message.clear_reactions()
+
+        if selected[-1] == "👍":
+            await self.remove_reactions(message, ['👍', '👎'])
+            await self.add_reactions(message, ["🥾", "🔒", "👮", "🚮"])
+            self.send_thread_message(
+                self.open_threads[message.id], 
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            return
+
+        elif selected[-1] == "👎":
+            await self.remove_reactions(message, ['👍', '👎'])
+            await self.add_reactions(message, ["🤐", "🚮"])
+            self.send_thread_message(
+                self.open_threads[message.id],
+                "If you would like to restrict this user from reporting, please react on the" + 
+                " message with 🤐. If you would like to discard this report, react with 🚮."
+            )
+            return
+        
+        elif selected[-1] == "🥾":
+            await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
+            self.send_thread_message(self.open_threads[message.id], "User has been banned.")
+
+        elif selected[-1] == "🔒":
+            await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
+            self.send_thread_message(self.open_threads[message.id], "User has been restricted.")
+
+        elif selected[-1] == "👮":
+            await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
+            self.send_thread_message(self.open_threads[message.id], "Local authorities are being notified.")
+
+        elif selected[-1] == "🚮":
+            await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
+            self.send_thread_message(self.open_threads[message.id], "Message is being deleted.")
+
+        elif selected[-1] == "🤐":
+            await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
+            self.send_thread_message(self.open_threads[message.id], "User has been restricted from reporting.")
+        
+        # remove thread from list in bot and delete message. this does NOT delete the thread
+        del self.open_threads[message.id]
+        await message.delete()
+
+
     async def handle_mod_message(self, message):
         header = {"Authorization": f"Bot {discord_token}", "Content-Type": "application/json"}
         data = {"name": f"{message.id}", "auto_archive_duration": 60}
-        requests.post(f"/channels/{message.channel.id}/messages/{message.id}/threads")
+        response = json.loads(requests.post(
+            f"https://discord.com/api/v9/channels/{message.channel.id}/messages/{message.id}/threads", 
+            json=data, headers=header
+        ).content)
+
+        thread_id = response["id"]
+        response = json.loads(requests.post(
+            f"https://discord.com/api/v9/channels/{thread_id}/messages",
+            json={"content": "sample information..."}, headers=header
+        ).content)
+
+        response = json.loads(requests.post(
+            f"https://discord.com/api/v9/channels/{thread_id}/messages",
+            json={"content": "Is this a valid report? Please react on the outer message with 👍 or 👎."}, headers=header
+        ).content)
+
+        await self.add_reactions(message, ['👍', '👎'])
+        self.open_threads[message.id] = thread_id
 
     async def on_message(self, message):
         '''
         This function is called whenever a message is sent in a channel that the bot can see (including DMs). 
         Currently the bot is configured to only handle messages that are sent over DMs or in your group's "group-#" channel. 
         '''
+        is_mod_message = (
+            not isinstance(message.channel, discord.channel.DMChannel) and message.channel.name == f"group-{self.group_num}-mod" 
+        )
+
         # Ignore messages from the bot 
-        if message.author.id == self.user.id:
+        if (message.author.id == self.user.id) and (not is_mod_message):
             return
 
         # Check if this message was sent in a server ("guild") or if it's a DM
         if message.guild:
-            if (message.channel.name == f"group-{self.group_num}-mod"):
+            if (is_mod_message):
                 await self.handle_mod_message(message)
-            await self.handle_channel_message(message)
+            else: await self.handle_channel_message(message)
         else:
             await self.handle_dm(message)
 
@@ -95,7 +207,7 @@ class ModBot(discord.Client):
         if author_id not in self.reports:
             self.reports[author_id] = Report(self)
 
-        # Let the report class handle this message; forward all the messages it returns to uss
+        # Let the report class handle this message; forward all the messages it returns to us
         responses = await self.reports[author_id].handle_message(message)
         for r in responses:
             await message.channel.send(r)
@@ -109,12 +221,13 @@ class ModBot(discord.Client):
         if not message.channel.name == f'group-{self.group_num}':
             return
 
-        # Forward the message to the mod channel
-        mod_channel = self.mod_channels[message.guild.id]
-        await mod_channel.send(f'Forwarded message:\n{message.author.name}: "{message.content}"')
+        # # Forward the message to the mod channel
+        # mod_channel = self.mod_channels[message.guild.id]
+        # await mod_channel.send(f'Forwarded message:\n{message.author.name}: "{message.content}"')
 
+        mod_channel = self.mod_channels[message.guild.id]
         scores = self.eval_text(message)
-        await mod_channel.send(self.code_format(json.dumps(scores, indent=2)))
+        await mod_channel.send(self.code_format(json.dumps(scores, indent=2), message, "automatically"))
 
     def eval_text(self, message):
         '''
@@ -142,8 +255,11 @@ class ModBot(discord.Client):
 
         return scores
 
-    def code_format(self, text):
-        return "```" + text + "```"
+    def code_format(self, text, message, method):
+        toReturn = f"```This message was flagged {method}\n\n{message.author.name}: \"{message.content}\"\n\n"
+        toReturn += f"Message ID: {message.id} Author ID: {message.author.id}\n\n"
+        toReturn += text + "```"
+        return toReturn
 
 
 client = ModBot(perspective_key)
