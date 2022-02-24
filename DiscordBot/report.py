@@ -16,7 +16,8 @@ class Report:
     def __init__(self, client):
         self.state = State.REPORT_START
         self.client = client
-        self.message = None
+        self.reported_msg = None
+        self.reported_acc = None
     
     async def handle_message(self, message):
         '''
