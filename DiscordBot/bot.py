@@ -7,6 +7,7 @@ import logging
 import re
 import requests
 from report import Report
+from report import State
 import sqlite3 as sl # use DB to hold reports
 import database as database
 
@@ -65,11 +66,15 @@ class ModBot(discord.Client):
             try:
                 cursor = self.db.cursor()
                 cursor.execute(database.CREATE_REPORTS_DB)
+                self.db.commit()
                 cursor.close()
             except sl.Error as e: 
                 print(e)
         else:
             print("An error has occured getting the database reference!")
+
+        print("Bot is ready to go!")
+
 
     def send_thread_message(self, thread_id, message):
         requests.post(
@@ -120,27 +125,34 @@ class ModBot(discord.Client):
             )
             return
         
-        elif selected[-1] == "🥾":
+        action = None
+        if selected[-1] == "🥾":
+            action = "USER BANNED"
             await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
             self.send_thread_message(self.open_threads[message.id], "User has been banned.")
 
         elif selected[-1] == "🔒":
+            action = "USER RESTRICTED (MESSAGING)"
             await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
             self.send_thread_message(self.open_threads[message.id], "User has been restricted.")
 
         elif selected[-1] == "👮":
+            action = "AUTHORITIES ALERTED"
             await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
             self.send_thread_message(self.open_threads[message.id], "Local authorities are being notified.")
 
         elif selected[-1] == "🚮":
+            action = "REPORTED DELETED (NO ACTION)"
             await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
             self.send_thread_message(self.open_threads[message.id], "Message is being deleted.")
 
         elif selected[-1] == "🤐":
+            action = "USER RESTRICTED (REPORTING)"
             await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
             self.send_thread_message(self.open_threads[message.id], "User has been restricted from reporting.")
         
         # remove thread from list in bot and delete message. this does NOT delete the thread
+        database.update_resolution(self.db, action, message.id)
         del self.open_threads[message.id]
         await message.delete()
 
@@ -166,6 +178,10 @@ class ModBot(discord.Client):
 
         await self.add_reactions(message, ['👍', '👎'])
         self.open_threads[message.id] = thread_id
+        
+        db_entry = database.Entry()
+        db_entry.fill_information(message, thread_id)
+        db_entry.submit_entry(self.db)
 
     async def on_message(self, message):
         '''
@@ -207,13 +223,34 @@ class ModBot(discord.Client):
         if author_id not in self.reports:
             self.reports[author_id] = Report(self)
 
+        report = self.reports[author_id]
+
         # Let the report class handle this message; forward all the messages it returns to us
-        responses = await self.reports[author_id].handle_message(message)
+        responses = await report.handle_message(message)
         for r in responses:
             await message.channel.send(r)
 
-        # If the report is complete or cancelled, remove it from our map
-        if self.reports[author_id].report_complete():
+        # # If the report is complete or cancelled, remove it from our map
+        if report.report_complete():
+            # get mod channel
+            mod_channel = [v for v in self.mod_channels.values() 
+                if v.name == f"group-{self.group_num}-mod"
+            ][0].id
+            mod_channel = await self.fetch_channel(mod_channel)
+             
+            msg_channel = await self.fetch_channel(report.msg_channel_id)
+            message = await msg_channel.fetch_message(report.reported_msg)
+
+            # get scores and send to mod channel
+            scores = self.eval_text(message) 
+            await mod_channel.send(
+                self.code_format(
+                    json.dumps(scores, indent=2), 
+                    message, "manually", author_id, report.category, report.subcategory, report.additional_info
+                )
+            )
+
+        if report.report_complete() or report.state == State.REPORT_CANCEL:
             self.reports.pop(author_id)
 
     async def handle_channel_message(self, message):
@@ -255,9 +292,19 @@ class ModBot(discord.Client):
 
         return scores
 
-    def code_format(self, text, message, method):
-        toReturn = f"```This message was flagged {method}\n\n{message.author.name}: \"{message.content}\"\n\n"
+    def code_format(self, text, message, method, author_id=None, category=None, subcategory=None, additional_info=None):
+        if method == "manually": 
+            toReturn = f"```This message was flagged {method} by user {author_id}\n\n{message.author.name}: \"{message.content}\"\n\n"
+        else:                                          
+            toReturn = f"```This message was flagged {method}\n\n{message.author.name}: \"{message.content}\"\n\n"
         toReturn += f"Message ID: {message.id} Author ID: {message.author.id}\n\n"
+        
+        if category != None:
+            toReturn += f"Category: {category} Subcategory: {subcategory}\n\n"
+
+        if additional_info != None: 
+            toReturn += f"Additional Info: {additional_info}\n\n"
+
         toReturn += text + "```"
         return toReturn
 

@@ -30,6 +30,7 @@ class Report:
         self.reported_acc = None
         self.reported_msg = None
         self.msg_content = None
+        self.msg_channel_id = None
         self.category = None
         self.subcategory = None
         self.additional_info = None
@@ -71,6 +72,7 @@ class Report:
 
             # Here we've found the message
             self.msg_content = message.content
+            self.msg_channel_id = message.channel.id
             self.reported_msg = message.id
             self.reported_acc = message.author.id
             reply = "I found this message:\n" + "```" + message.author.name + ": " + message.content + "``` \n"
@@ -244,7 +246,3 @@ class Report:
     def report_complete(self):
         return self.state == State.REPORT_COMPLETE
     
-
-
-    
-
