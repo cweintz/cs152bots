@@ -23,6 +23,11 @@ class Report:
     HELP_KEYWORD = "help"
     BLOCK_REQUEST = "Would you like to block this user from sending you more messages? (yes/no)"
     INFO_REQUEST = "If you would like to provide additional information, please reply to this message with the additional information that you would like to provide (all in one message). Otherwise, reply 'no'."
+    SUICIDE_PREVENTION_MESSAGE = "Hi there!\n\nSomebody who really cares about you requested that I reach out. " \
+                                 "I want to let you know that you are never alone in anything you are going though. " \
+                                 "Somebody will always be there to help you. If you're ever feeling like you're out of options, " \
+                                 "please talk to a friend or family member, call 800-273-8255, or visit https://suicidepreventionlifeline.org/. We love you!\n\n" \
+                                 "💚 Team 27"
 
     def __init__(self, client):
         self.state = State.REPORT_START
