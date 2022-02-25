@@ -38,6 +38,7 @@ class Report:
         self.msg_channel_id = None
         self.category = None
         self.subcategory = None
+        self.involve_authorities = None
         self.additional_info = None
 
     async def handle_message(self, message):
@@ -204,10 +205,12 @@ class Report:
             m = message.content
             reply = "I don't understand that response. Please reply with either 'yes' or 'no'."
             if m == "yes":
+                self.involve_authorities = m
                 reply = "A member of our team will investigate the suspicious behavior and alert authorities if necessary. "
                 reply += self.BLOCK_REQUEST
                 self.state = State.AWAITING_BLOCK
             elif m == "no":
+                self.involve_authorities = m
                 reply = "We will investigate the suspicious behavior and take action if necessary."
                 reply += self.BLOCK_REQUEST
                 self.state = State.AWAITING_BLOCK
