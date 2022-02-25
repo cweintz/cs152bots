@@ -40,6 +40,7 @@ class ModBot(discord.Client):
         self.open_threads = dict()
         self.header = {"Authorization": f"Bot {discord_token}", "Content-Type": "application/json"}
         self.db = None
+        self.open_entries = {}
 
     async def on_ready(self):
         print(f'{self.user.name} has connected to Discord! It is these guilds:')
@@ -90,6 +91,14 @@ class ModBot(discord.Client):
         for emoji in emojis:
             await message.remove_reaction(emoji, self.user)
 
+    async def shift_forward(self, to_remove, to_add, message, next_message):
+        await self.remove_reactions(message, to_remove)
+        await self.add_reactions(message, to_add)
+        self.send_thread_message(
+            self.open_threads[message.id],
+            next_message
+        )
+
     async def on_raw_reaction_add(self, response):
         # get the latest reaction
         channel = await self.fetch_channel(response.channel_id)
@@ -100,29 +109,222 @@ class ModBot(discord.Client):
         
         selected = [reaction.emoji for reaction in message.reactions if reaction.count > 1]
         if len(selected) < 1: return
-        
-        # insufficient permisssions
-        # await message.clear_reactions()
 
+        
+        if selected[0] == '❕':
+            msg = self.open_entries[message.id].get_reported_history(self.db)
+            await self.shift_forward(
+                ['❕'],
+                [],
+                message,
+                msg
+            )
+            return
+        
         if selected[-1] == "👍":
-            await self.remove_reactions(message, ['👍', '👎'])
-            await self.add_reactions(message, ["🥾", "🔒", "👮", "🚮"])
-            self.send_thread_message(
-                self.open_threads[message.id], 
+            if self.open_entries[message.id].reporter == None:
+                await self.shift_forward(
+                    ['👍', '👎'], 
+                    ["1️⃣", "2️⃣", "3️⃣", "4️⃣"],
+                    message,
+                    "What category best describes this message?\n" + 
+                    "1️⃣: Threat of Danger or Harm\n" +
+                    "2️⃣: Harassment\n" + "3️⃣: Spam\n" + 
+                    "4️⃣: Suspicious Behavior\n"
+                )
+            else:
+                await self.shift_forward(
+                    ['👍', '👎'], 
+                    ["🥾", "🔒", "👮", "🚮"],
+                    message,
+                    "Please react on the message with one of the following emojis to perform an" +
+                    " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                    "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+                )
+            return
+
+        elif selected[-1] == "👎":
+            await self.shift_forward(
+                ['👍', '👎'],
+                ["🤐", "🚮"],
+                message, 
+                "If you would like to restrict this user from reporting, please react on the" + 
+                " message with 🤐. If you would like to discard this report, react with 🚮."
+            )
+            return
+
+        if selected[-1] == "1️⃣":
+            await self.shift_forward(
+                ["1️⃣", "2️⃣", "3️⃣", "4️⃣"], 
+                ['🔘', '🔴'],
+                message, 
+                "Please select a subcategory.\n" + "🔘: Credible Threat of Violence\n" + 
+                "🔴: Suicidal Comments\n"
+            )
+            return
+
+        if selected[-1] == "2️⃣":
+            await self.shift_forward(
+                ["1️⃣", "2️⃣", "3️⃣", "4️⃣"], 
+                ['🟠', '🟡', '🟢'],
+                message, 
+                "Please select a subcategory.\n" + "🟠: Sexual Harassment\n" + 
+                "🟡: Hate Speech\n" + "🟢: Bullying"
+            )
+            return
+        
+        if selected[-1] == "3️⃣":
+            await self.shift_forward(
+                ["1️⃣", "2️⃣", "3️⃣", "4️⃣"], 
+                ['🔵', '🟣'],
+                message, 
+                "Please select a subcategory.\n" + "🔵: Unwanted Solicitation\n" + 
+                "🟣: Scam or Fradulent Business"
+            )
+            return
+
+        if selected[-1] == "4️⃣":
+            await self.shift_forward(
+                ["1️⃣", "2️⃣", "3️⃣", "4️⃣"], 
+                ['⚫️', '⚪️', '🟤', '🔶'],
+                message, 
+                "Please select a subcategory.\n" + "⚫️: Possible Grooming\n" + 
+                "⚪️: Impersonation or Compromised Account\n" + 
+                "🟤: Attempt to Solicit Personal Information\n" +
+                "🔶: Offer of Transportation"
+            )
+            return
+
+        if selected[-1] == '🔘':
+            await self.shift_forward(
+                ['🔘', '🔴'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
                 "Please react on the message with one of the following emojis to perform an" +
                 " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
                 "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
             )
+            database.update_categories(self.db, '🔘', message.id)
             return
 
-        elif selected[-1] == "👎":
-            await self.remove_reactions(message, ['👍', '👎'])
-            await self.add_reactions(message, ["🤐", "🚮"])
-            self.send_thread_message(
-                self.open_threads[message.id],
-                "If you would like to restrict this user from reporting, please react on the" + 
-                " message with 🤐. If you would like to discard this report, react with 🚮."
+        if selected[-1] == '🔴':
+            await self.shift_forward(
+                ['🔘', '🔴'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
             )
+            database.update_categories(self.db, '🔴', message.id)
+            return
+
+        if selected[-1] == '🟠':
+            await self.shift_forward(
+                ['🟠', '🟡', '🟢',],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '🟠', message.id)
+            return
+
+        if selected[-1] == '🟡':
+            await self.shift_forward(
+                ['🟠', '🟡', '🟢',],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '🟡', message.id)
+            return
+
+        if selected[-1] == '🟢':
+            await self.shift_forward(
+                ['🟠', '🟡', '🟢'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '🟢', message.id)
+            return
+
+        if selected[-1] == '🔵':
+            await self.shift_forward(
+                ['🔵', '🟣'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '🔵', message.id)
+            return
+
+        if selected[-1] == '🟣':
+            await self.shift_forward(
+                ['🔵', '🟣'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '🟣', message.id)
+            return
+
+        if selected[-1] == '⚫️':
+            await self.shift_forward(
+                ['⚫️', '⚪️', '🟤', '🔶'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '⚫️', message.id)
+            return
+
+        if selected[-1] == '⚪️':
+            await self.shift_forward(
+                ['⚫️', '⚪️', '🟤', '🔶'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '⚪️', message.id)
+            return
+
+        if selected[-1] == '🟤':
+            await self.shift_forward(
+                ['⚫️', '⚪️', '🟤', '🔶'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '🟤', message.id)
+            return
+
+        if selected[-1] == '🔶':
+            await self.shift_forward(
+                ['⚫️', '⚪️', '🟤', '🔶'],
+                ["🥾", "🔒", "👮", "🚮"],
+                message,
+                "Please react on the message with one of the following emojis to perform an" +
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
+            )
+            database.update_categories(self.db, '🔶', message.id)
             return
         
         action = None
@@ -142,7 +344,7 @@ class ModBot(discord.Client):
             self.send_thread_message(self.open_threads[message.id], "Local authorities are being notified.")
 
         elif selected[-1] == "🚮":
-            action = "REPORTED DELETED (NO ACTION)"
+            action = "REPORT DELETED (NO ACTION)"
             await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
             self.send_thread_message(self.open_threads[message.id], "Message is being deleted.")
 
@@ -173,15 +375,20 @@ class ModBot(discord.Client):
 
         response = json.loads(requests.post(
             f"https://discord.com/api/v9/channels/{thread_id}/messages",
-            json={"content": "Is this a valid report? Please react on the outer message with 👍 or 👎."}, headers=header
+            json={"content": "Is this a valid report? Please react on the outer message with 👍 or 👎.\n" +
+            "You can view the report history with ❕."}, headers=header
         ).content)
 
         await self.add_reactions(message, ['👍', '👎'])
         self.open_threads[message.id] = thread_id
-        
+
         db_entry = database.Entry()
         db_entry.fill_information(message, thread_id)
         db_entry.submit_entry(self.db)
+        self.open_entries[message.id] = db_entry
+        to_add = ['❕'] 
+        await self.add_reactions(message, to_add)
+
 
     async def on_message(self, message):
         '''
@@ -264,7 +471,9 @@ class ModBot(discord.Client):
 
         mod_channel = self.mod_channels[message.guild.id]
         scores = self.eval_text(message)
-        await mod_channel.send(self.code_format(json.dumps(scores, indent=2), message, "automatically"))
+
+        if len([val for val in scores.values() if val > .75]) > 0:
+            await mod_channel.send(self.code_format(json.dumps(scores, indent=2), message, "automatically"))
 
     def eval_text(self, message):
         '''
