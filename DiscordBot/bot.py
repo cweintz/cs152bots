@@ -8,7 +8,7 @@ import re
 import requests
 from report import Report
 from report import State
-import sqlite3 as sl # use DB to hold reports
+import sqlite3 as sl  # use DB to hold reports
 import database as database
 
 # Set up logging to the console
@@ -34,8 +34,8 @@ class ModBot(discord.Client):
         intents = discord.Intents.default()
         super().__init__(command_prefix='.', intents=intents)
         self.group_num = None
-        self.mod_channels = {} # Map from guild to the mod channel id for that guild
-        self.reports = {} # Map from user IDs to the state of their report
+        self.mod_channels = {}  # Map from guild to the mod channel id for that guild
+        self.reports = {}  # Map from user IDs to the state of their report
         self.perspective_key = key
         self.open_threads = dict()
         self.header = {"Authorization": f"Bot {discord_token}", "Content-Type": "application/json"}
@@ -68,13 +68,12 @@ class ModBot(discord.Client):
                 cursor.execute(database.CREATE_REPORTS_DB)
                 self.db.commit()
                 cursor.close()
-            except sl.Error as e: 
+            except sl.Error as e:
                 print(e)
         else:
             print("An error has occured getting the database reference!")
 
         print("Bot is ready to go!")
-
 
     def send_thread_message(self, thread_id, message):
         requests.post(
@@ -95,12 +94,12 @@ class ModBot(discord.Client):
         channel = await self.fetch_channel(response.channel_id)
         if channel.name != f"group-{self.group_num}-mod": return
 
-        message = await channel.fetch_message(response.message_id)   
+        message = await channel.fetch_message(response.message_id)
         if message.id not in self.open_threads: return
-        
+
         selected = [reaction.emoji for reaction in message.reactions if reaction.count > 1]
         if len(selected) < 1: return
-        
+
         # insufficient permisssions
         # await message.clear_reactions()
 
@@ -108,9 +107,9 @@ class ModBot(discord.Client):
             await self.remove_reactions(message, ['👍', '👎'])
             await self.add_reactions(message, ["🥾", "🔒", "👮", "🚮"])
             self.send_thread_message(
-                self.open_threads[message.id], 
+                self.open_threads[message.id],
                 "Please react on the message with one of the following emojis to perform an" +
-                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" + 
+                " appropriate action.\n" + "Ban Account: 🥾\n" + "Restrict Account: 🔒\n" +
                 "Alert Law Enforcement: 👮\n" + "Do Nothing (Delete Report): 🚮"
             )
             return
@@ -120,11 +119,11 @@ class ModBot(discord.Client):
             await self.add_reactions(message, ["🤐", "🚮"])
             self.send_thread_message(
                 self.open_threads[message.id],
-                "If you would like to restrict this user from reporting, please react on the" + 
+                "If you would like to restrict this user from reporting, please react on the" +
                 " message with 🤐. If you would like to discard this report, react with 🚮."
             )
             return
-        
+
         action = None
         if selected[-1] == "🥾":
             action = "USER BANNED"
@@ -150,18 +149,17 @@ class ModBot(discord.Client):
             action = "USER RESTRICTED (REPORTING)"
             await self.remove_reactions(message, ["🥾", "🔒", "👮", "🚮"])
             self.send_thread_message(self.open_threads[message.id], "User has been restricted from reporting.")
-        
+
         # remove thread from list in bot and delete message. this does NOT delete the thread
         database.update_resolution(self.db, action, message.id)
         del self.open_threads[message.id]
         await message.delete()
 
-
     async def handle_mod_message(self, message):
         header = {"Authorization": f"Bot {discord_token}", "Content-Type": "application/json"}
         data = {"name": f"{message.id}", "auto_archive_duration": 60}
         response = json.loads(requests.post(
-            f"https://discord.com/api/v9/channels/{message.channel.id}/messages/{message.id}/threads", 
+            f"https://discord.com/api/v9/channels/{message.channel.id}/messages/{message.id}/threads",
             json=data, headers=header
         ).content)
 
@@ -178,7 +176,7 @@ class ModBot(discord.Client):
 
         await self.add_reactions(message, ['👍', '👎'])
         self.open_threads[message.id] = thread_id
-        
+
         db_entry = database.Entry()
         db_entry.fill_information(message, thread_id)
         db_entry.submit_entry(self.db)
@@ -189,7 +187,8 @@ class ModBot(discord.Client):
         Currently the bot is configured to only handle messages that are sent over DMs or in your group's "group-#" channel. 
         '''
         is_mod_message = (
-            not isinstance(message.channel, discord.channel.DMChannel) and message.channel.name == f"group-{self.group_num}-mod" 
+                not isinstance(message.channel,
+                               discord.channel.DMChannel) and message.channel.name == f"group-{self.group_num}-mod"
         )
 
         # Ignore messages from the bot 
@@ -200,14 +199,15 @@ class ModBot(discord.Client):
         if message.guild:
             if (is_mod_message):
                 await self.handle_mod_message(message)
-            else: await self.handle_channel_message(message)
+            else:
+                await self.handle_channel_message(message)
         else:
             await self.handle_dm(message)
 
     async def handle_dm(self, message):
         # Handle a help message
         if message.content == Report.HELP_KEYWORD:
-            reply =  "Use the `report` command to begin the reporting process.\n"
+            reply = "Use the `report` command to begin the reporting process.\n"
             reply += "Use the `cancel` command to cancel the report process.\n"
             await message.channel.send(reply)
             return
@@ -233,20 +233,21 @@ class ModBot(discord.Client):
         # # If the report is complete or cancelled, remove it from our map
         if report.report_complete():
             # get mod channel
-            mod_channel = [v for v in self.mod_channels.values() 
-                if v.name == f"group-{self.group_num}-mod"
-            ][0].id
+            mod_channel = [v for v in self.mod_channels.values()
+                           if v.name == f"group-{self.group_num}-mod"
+                           ][0].id
             mod_channel = await self.fetch_channel(mod_channel)
-             
+
             msg_channel = await self.fetch_channel(report.msg_channel_id)
             message = await msg_channel.fetch_message(report.reported_msg)
 
             # get scores and send to mod channel
-            scores = self.eval_text(message) 
+            scores = self.eval_text(message)
             await mod_channel.send(
                 self.code_format(
-                    json.dumps(scores, indent=2), 
-                    message, "manually", author_id, report.category, report.subcategory, report.additional_info
+                    json.dumps(scores, indent=2),
+                    message, "manually", author_id, report.category, report.subcategory, report.involve_authorities,
+                    report.additional_info
                 )
             )
 
@@ -277,10 +278,10 @@ class ModBot(discord.Client):
             'comment': {'text': message.content},
             'languages': ['en'],
             'requestedAttributes': {
-                                    'SEVERE_TOXICITY': {}, 'PROFANITY': {},
-                                    'IDENTITY_ATTACK': {}, 'THREAT': {},
-                                    'TOXICITY': {}, 'FLIRTATION': {}
-                                },
+                'SEVERE_TOXICITY': {}, 'PROFANITY': {},
+                'IDENTITY_ATTACK': {}, 'THREAT': {},
+                'TOXICITY': {}, 'FLIRTATION': {}
+            },
             'doNotStore': True
         }
         response = requests.post(url, data=json.dumps(data_dict))
@@ -292,17 +293,21 @@ class ModBot(discord.Client):
 
         return scores
 
-    def code_format(self, text, message, method, author_id=None, category=None, subcategory=None, additional_info=None):
-        if method == "manually": 
+    def code_format(self, text, message, method, author_id=None, category=None, subcategory=None,
+                    involve_authorities=None, additional_info=None):
+        if method == "manually":
             toReturn = f"```This message was flagged {method} by user {author_id}\n\n{message.author.name}: \"{message.content}\"\n\n"
-        else:                                          
+        else:
             toReturn = f"```This message was flagged {method}\n\n{message.author.name}: \"{message.content}\"\n\n"
         toReturn += f"Message ID: {message.id} Author ID: {message.author.id}\n\n"
-        
-        if category != None:
+
+        if category is not None:
             toReturn += f"Category: {category} Subcategory: {subcategory}\n\n"
 
-        if additional_info != None: 
+        if involve_authorities == "yes":
+            toReturn += f"This user has indicated this is a serious matter that may potentially involve the authorities"
+
+        if additional_info is not None:
             toReturn += f"Additional Info: {additional_info}\n\n"
 
         toReturn += text + "```"
