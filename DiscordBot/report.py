@@ -119,7 +119,7 @@ class Report:
             if m == "1":
                 self.subcategory = "Credible Threat of Violence"
                 reply = "You selected 'Credible Threat of Violence'. "
-                reply += "If you feel that the threat is imminent, consider calling 911. "
+                reply += "If you feel that the threat is imminent, consider calling 911."
                 reply += self.BLOCK_REQUEST
                 self.state = State.AWAITING_BLOCK
             elif m == "2":
