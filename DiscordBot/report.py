@@ -18,6 +18,8 @@ class Report:
         self.client = client
         self.reported_msg = None
         self.reported_acc = None
+        self.msg_content = None
+        self.cancelled = False
     
     async def handle_message(self, message):
         '''
@@ -28,6 +30,7 @@ class Report:
 
         if message.content == self.CANCEL_KEYWORD:
             self.state = State.REPORT_COMPLETE
+            self.cancelled = True
             return ["Report cancelled."]
         
         if self.state == State.REPORT_START:
@@ -56,6 +59,9 @@ class Report:
 
             # Here we've found the message - it's up to you to decide what to do next!
             self.state = State.MESSAGE_IDENTIFIED
+            self.msg_content = message.content
+            self.reported_msg = message.id
+            self.reported_acc = message.author.id
             return ["I found this message:", "```" + message.author.name + ": " + message.content + "```", \
                     "This is all I know how to do right now - it's up to you to build out the rest of my reporting flow!"]
         
