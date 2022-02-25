@@ -212,6 +212,8 @@ class Report:
             m = message.content
             reply = "I don't understand that response. Please reply with either 'yes' or 'no'."
             if m == "yes":
+                user = await self.client.fetch_user(self.reported_acc)
+                await user.send(self.SUICIDE_PREVENTION_MESSAGE)
                 reply = "The message has been sent, and resources have been shared anonymously with the user in concern. "
                 reply += self.BLOCK_REQUEST
                 self.state = State.AWAITING_BLOCK
